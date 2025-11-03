@@ -90,7 +90,7 @@ const translations = {
 };
 
 
-// --- Content from types.ts ---
+// --- TYPES ---
 interface ChatMessage {
   role: 'user' | 'model';
   text: string;
@@ -102,7 +102,7 @@ interface Reminder {
   startDate: number; // timestamp
 }
 
-// --- Content from components/icons.tsx ---
+// --- ICONS ---
 const UploadIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -151,14 +151,14 @@ const ShareIcon = ({ className }: { className?: string }) => (
     </svg>
 );
 
-// --- Content from services/geminiService.ts ---
+// --- GEMINI SERVICE ---
 const API_KEY = process.env.API_KEY;
 
 if (!API_KEY) {
   console.warn("API_KEY environment variable not set. The app may not work correctly.");
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+const ai = new GoogleGenAI({ apiKey: API_KEY || "" });
 
 const PLANT_IDENTIFICATION_PROMPT_FA = `
 شما یک دستیار متخصص باغبانی به زبان فارسی هستید. وظیفه شما شناسایی گیاه موجود در این تصویر است.
@@ -243,8 +243,7 @@ const sendMessageToChat = async (chat: ChatType, message: string): Promise<Gener
     return response;
 };
 
-// --- Content from App.tsx ---
-// Add type definitions for SpeechRecognition API
+// --- APP COMPONENT ---
 interface SpeechRecognition {
   continuous: boolean;
   interimResults: boolean;
@@ -263,7 +262,6 @@ declare global {
   }
 }
 
-// Helper function to convert file to base64
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -277,8 +275,9 @@ const ReminderModal: React.FC<{
     plantName: string,
     onSave: (interval: number) => void,
     onClose: () => void,
-    t: typeof translations.en
-}> = ({ plantName, onSave, onClose, t }) => {
+    t: typeof translations.en,
+    lang: 'fa' | 'en'
+}> = ({ plantName, onSave, onClose, t, lang }) => {
     const [interval, setInterval] = useState(7);
 
     const handleSave = () => {
@@ -289,10 +288,10 @@ const ReminderModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className={`bg-white rounded-lg shadow-xl p-6 w-full max-w-sm ${t.langToggle === 'FA' ? 'text-left' : 'text-right'}`}>
+            <div className={`bg-white rounded-lg shadow-xl p-6 w-full max-w-sm ${lang === 'fa' ? 'text-right' : 'text-left'}`}>
                 <h3 className="text-lg font-bold text-gray-800 mb-2">{t.modalTitle}</h3>
                 <p className="text-sm text-gray-600 mb-4">{t.modalPrompt} <span className="font-semibold text-green-700">{plantName}</span>{t.modalPromptEnd}</p>
-                <div className={`flex items-center justify-center space-x-2 ${t.langToggle === 'EN' ? 'space-x-reverse' : ''} mb-6`}>
+                <div className={`flex items-center justify-center ${lang === 'fa' ? 'space-x-2 space-x-reverse' : 'space-x-2'} mb-6`}>
                     <input
                         type="number"
                         value={interval}
@@ -399,8 +398,13 @@ const App: React.FC = () => {
                 const intervalsPassed = Math.floor(timeSinceStart / intervalMs);
                 const nextWateringTimestamp = reminder.startDate + (intervalsPassed + 1) * intervalMs;
                 const nextWateringDate = new Date(nextWateringTimestamp);
+                
+                const startOfToday = new Date();
+                startOfToday.setHours(0,0,0,0);
+                const endOfToday = new Date();
+                endOfToday.setHours(23,59,59,999);
 
-                if (Date.now() >= nextWateringDate.getTime() - msInDay && Date.now() < nextWateringDate.getTime() + msInDay) {
+                if (nextWateringDate >= startOfToday && nextWateringDate <= endOfToday) {
                   setTimeout(() => alert(t.alertWatering.replace('{plantName}', reminder.plantName)), 500);
                 }
 
@@ -418,7 +422,6 @@ const App: React.FC = () => {
   const toggleLanguage = () => {
     const newLang = language === 'fa' ? 'en' : 'fa';
     setLanguage(newLang);
-    // Reset state on language change for a cleaner experience
     setMessages([]);
     setPlantName(null);
     setImage(null);
@@ -458,7 +461,7 @@ const App: React.FC = () => {
       
       setMessages([{ role: 'model', text: modelResponse }]);
 
-      const nameMatch = modelResponse.match(/\*\*Plant Name:\*\*| \*\*نام گیاه:\*\*\s*(.*?)\s*(\/|\n)/);
+      const nameMatch = modelResponse.match(/\*\*(?:Plant Name|نام گیاه):\*\*\s*(.*?)\s*(?:\/|\n)/);
       if (nameMatch && nameMatch[1]) {
         setPlantName(nameMatch[1].trim());
       }
@@ -530,10 +533,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteReminder = (plantNameToDelete: string) => {
-    const updatedReminders = reminders.filter(r => r.plantName !== plantNameToDelete);
-    const updatedRemindersForStorage = updatedReminders.map(({plantName, interval, startDate}) => ({plantName, interval, startDate}));
+    const updatedRemindersRaw = JSON.parse(localStorage.getItem('wateringReminders') || '[]') as Reminder[];
+    const updatedRemindersForStorage = updatedRemindersRaw.filter(r => r.plantName !== plantNameToDelete);
     localStorage.setItem('wateringReminders', JSON.stringify(updatedRemindersForStorage));
-    setReminders(updatedReminders);
+    setReminders(prev => prev.filter(r => r.plantName !== plantNameToDelete));
   };
   
   const handleToggleListening = () => {
@@ -593,7 +596,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen bg-green-50">
-      {isReminderModalOpen && plantName && <ReminderModal plantName={plantName} onSave={handleSaveReminder} onClose={() => setIsReminderModalOpen(false)} t={t}/>}
+      {isReminderModalOpen && plantName && <ReminderModal plantName={plantName} onSave={handleSaveReminder} onClose={() => setIsReminderModalOpen(false)} t={t} lang={language}/>}
       <header className="relative bg-white shadow-md p-4 flex items-center justify-center border-b-2 border-green-200">
         <h1 className="text-2xl font-bold text-green-800">{t.headerTitle}</h1>
         <button onClick={toggleLanguage} className={`absolute top-1/2 -translate-y-1/2 ${language === 'fa' ? 'left-4' : 'right-4'} py-1 px-3 bg-gray-200 text-gray-700 font-bold rounded-md hover:bg-gray-300`}>
@@ -676,7 +679,7 @@ const App: React.FC = () => {
               ))}
               {isLoading && messages.length > 0 && (
                   <div className="flex justify-start mb-4">
-                      <div className="max-w-xl p-4 rounded-2xl bg-white text-gray-800 rounded-bl-none shadow-sm flex items-center">
+                      <div className="max-w-xl p-4 rounded-2xl bg-white text-gray-800 shadow-sm flex items-center">
                           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
                           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse delay-75 mr-2"></div>
                           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse delay-150"></div>
@@ -745,7 +748,7 @@ const App: React.FC = () => {
   );
 };
 
-// --- Original index.tsx content ---
+// --- RENDER ---
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
